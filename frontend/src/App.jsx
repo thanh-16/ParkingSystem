@@ -139,6 +139,8 @@ function App() {
 
 
   const [selectedSlotDetails, setSelectedSlotDetails] = useState(null);
+  const [maintenanceSearch, setMaintenanceSearch] = useState('');
+  const [maintenanceFilter, setMaintenanceFilter] = useState('All');
 
 
   const [toasts, setToasts] = useState([]);
@@ -446,6 +448,54 @@ function App() {
       );
       setSelectedSlotDetails(null);
       addToast(`Đã chuyển trạng thái ô đỗ ${slot.slotNumber} sang ${shouldBlock ? 'Bảo trì' : 'Hoạt động'} (Simulation)!`, 'warning');
+    }
+  };
+
+  const handleBatchToggleMaintenanceForFloor = async (floorNum, shouldBlock) => {
+    const floorSlots = slots.filter((s) => s.floorNumber === floorNum);
+    const targetSlots = shouldBlock 
+      ? floorSlots.filter((s) => s.status === 'Available')
+      : floorSlots.filter((s) => s.status === 'Maintenance');
+
+    if (targetSlots.length === 0) {
+      addToast(`Không có ô đỗ nào phù hợp ở Tầng ${floorNum === -1 ? 'B1' : floorNum} để ${shouldBlock ? 'bảo trì' : 'khôi phục'}!`, 'info');
+      return;
+    }
+
+    const newStatusInt = shouldBlock ? 3 : 0;
+    const newStatusStr = shouldBlock ? 'Maintenance' : 'Available';
+
+    if (mode === 'live') {
+      try {
+        const slotIds = targetSlots.map((s) => s.id);
+        const res = await fetch('http://localhost:5125/api/v1/registry/slots/batch-update-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            slotIds: slotIds,
+            status: newStatusInt
+          })
+        });
+
+        if (res.ok) {
+          addToast(`Đồng bộ thành công! Đã ${shouldBlock ? 'khóa bảo trì' : 'khôi phục'} ${targetSlots.length} ô đỗ ở Tầng ${floorNum === -1 ? 'B1' : floorNum}.`, 'success');
+          syncLiveConfig();
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          addToast(errData.message || 'Lỗi cập nhật trạng thái hàng loạt!', 'error');
+        }
+      } catch (err) {
+        addToast('Lỗi kết nối API Gateway để cập nhật trạng thái hàng loạt!', 'error');
+      }
+    } else {
+      const targetSlotNumbers = targetSlots.map((s) => s.slotNumber);
+      setSlots((prev) =>
+        prev.map((s) => (targetSlotNumbers.includes(s.slotNumber) ? { ...s, status: newStatusStr } : s))
+      );
+      addToast(`Đã ${shouldBlock ? 'khóa bảo trì' : 'khôi phục'} ${targetSlots.length} ô đỗ ở Tầng ${floorNum === -1 ? 'B1' : floorNum} (Simulation)!`, 'success');
     }
   };
 
@@ -1411,7 +1461,7 @@ function App() {
                   <div>
                     <h4 style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#7f1d1d' }}>Kết Nối Live API Gateway Ngoại Tuyến (Offline)</h4>
                     <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#991b1b', lineHeight: '1.4' }}>
-                      Cổng API Gateway (<code>http:
+                      Cổng API Gateway (<code>http://localhost:5125</code>) ngoại tuyến. Vui lòng kiểm tra kết nối dịch vụ.
                     </p>
                   </div>
                 </div>
@@ -1572,6 +1622,168 @@ function App() {
                       </div>
                       <div className="legend-item">
                         <span className="dot cyan"></span> Bảo trì (Maintenance)
+                      </div>
+                    </div>
+
+                    <hr style={{ margin: '20px 0', borderColor: 'var(--border-color)', borderStyle: 'dashed' }} />
+
+                    <div>
+                      <h3 style={{ fontFamily: 'Outfit', fontSize: '15px', margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <i className="fa-solid fa-screwdriver-wrench" style={{ color: 'var(--info)' }}></i>
+                        Bảng Quản Lý Bảo Trì & Sửa Chữa Ô Đỗ
+                      </h3>
+
+                      <div style={{
+                        display: 'flex',
+                        gap: '12px',
+                        background: 'rgba(255,255,255,0.02)',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        marginBottom: '14px',
+                        alignItems: 'center',
+                        flexWrap: 'wrap'
+                      }}>
+                        <span style={{ fontSize: '11.5px', fontWeight: 'bold' }}>
+                          Thao tác nhanh cho {selectedFloor === -1 ? 'Tầng B1' : `Tầng ${selectedFloor}`}:
+                        </span>
+                        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                          <button
+                            onClick={() => handleBatchToggleMaintenanceForFloor(selectedFloor, true)}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '10.5px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', borderColor: 'var(--info)', color: 'var(--info)' }}
+                          >
+                            <i className="fa-solid fa-wrench"></i> Bảo trì cả tầng (chỉ ô trống)
+                          </button>
+                          <button
+                            onClick={() => handleBatchToggleMaintenanceForFloor(selectedFloor, false)}
+                            className="btn"
+                            style={{ fontSize: '10.5px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--success)' }}
+                          >
+                            <i className="fa-solid fa-circle-check"></i> Khôi phục cả tầng
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Tìm nhanh ô đỗ..."
+                          value={maintenanceSearch}
+                          onChange={(e) => setMaintenanceSearch(e.target.value.toUpperCase())}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            background: 'rgba(0,0,0,0.2)',
+                            border: '1px solid var(--border-color)',
+                            color: 'white',
+                            borderRadius: '6px',
+                            width: '140px'
+                          }}
+                        />
+
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {['All', 'Available', 'Occupied', 'Reserved', 'Maintenance'].map((st) => (
+                            <button
+                              key={st}
+                              className={`floor-btn ${maintenanceFilter === st ? 'active' : ''}`}
+                              onClick={() => setMaintenanceFilter(st)}
+                              style={{ padding: '3px 8px', fontSize: '10.5px', borderRadius: '5px' }}
+                            >
+                              {st === 'All' && 'Tất cả'}
+                              {st === 'Available' && 'Trống'}
+                              {st === 'Occupied' && 'Đỗ xe'}
+                              {st === 'Reserved' && 'Giữ chỗ'}
+                              {st === 'Maintenance' && 'Bảo trì'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ overflowY: 'auto', maxHeight: '220px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }}>
+                        <table className="pricing-table" style={{ fontSize: '12px', margin: 0 }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                              <th style={{ padding: '8px' }}>Mã Ô Đỗ</th>
+                              <th style={{ padding: '8px' }}>Tầng</th>
+                              <th style={{ padding: '8px' }}>Trạng Thái</th>
+                              <th style={{ padding: '8px' }}>Hành Động</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {slots
+                              .filter(s => {
+                                if (maintenanceSearch && !s.slotNumber.includes(maintenanceSearch)) return false;
+                                if (maintenanceFilter !== 'All' && s.status !== maintenanceFilter) return false;
+                                return true;
+                              })
+                              .map((slot) => (
+                                <tr key={slot.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                  <td style={{ padding: '6px 8px' }}><strong>{slot.slotNumber}</strong></td>
+                                  <td style={{ padding: '6px 8px' }}>{slot.floorNumber === -1 ? 'B1' : `Tầng ${slot.floorNumber}`}</td>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    <span className="status-indicator" style={{
+                                      border: 'none',
+                                      padding: '2px 6px',
+                                      fontSize: '10.5px',
+                                      background: slot.status === 'Available' ? 'rgba(16, 185, 129, 0.08)' :
+                                                  slot.status === 'Occupied' ? 'rgba(239, 68, 68, 0.08)' :
+                                                  slot.status === 'Reserved' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(6, 182, 212, 0.08)',
+                                      color: slot.status === 'Available' ? 'var(--success)' :
+                                             slot.status === 'Occupied' ? 'var(--danger)' :
+                                             slot.status === 'Reserved' ? 'var(--warning)' : 'var(--info)'
+                                    }}>
+                                      {slot.status === 'Available' && 'Trống'}
+                                      {slot.status === 'Occupied' && 'Đỗ xe'}
+                                      {slot.status === 'Reserved' && 'Giữ chỗ'}
+                                      {slot.status === 'Maintenance' && 'Bảo trì'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    {(!user || user.role === 'Manager' || user.role === 'Staff') && (
+                                      <>
+                                        {slot.status === 'Available' && (
+                                          <button
+                                            onClick={() => handleToggleMaintenance(slot, true)}
+                                            className="btn btn-secondary"
+                                            style={{ fontSize: '10px', padding: '2px 6px', borderColor: 'var(--info)', color: 'var(--info)' }}
+                                          >
+                                            <i className="fa-solid fa-wrench"></i> Bảo trì
+                                          </button>
+                                        )}
+                                        {slot.status === 'Maintenance' && (
+                                          <button
+                                            onClick={() => handleToggleMaintenance(slot, false)}
+                                            className="btn"
+                                            style={{ fontSize: '10px', padding: '2px 6px', background: 'var(--success)' }}
+                                          >
+                                            <i className="fa-solid fa-circle-check"></i> Sẵn dùng
+                                          </button>
+                                        )}
+                                        {slot.status === 'Occupied' && (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Có xe đỗ</span>
+                                        )}
+                                        {slot.status === 'Reserved' && (
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Đã đặt chỗ</span>
+                                        )}
+                                      </>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            {slots.filter(s => {
+                              if (maintenanceSearch && !s.slotNumber.includes(maintenanceSearch)) return false;
+                              if (maintenanceFilter !== 'All' && s.status !== maintenanceFilter) return false;
+                              return true;
+                            }).length === 0 && (
+                              <tr>
+                                <td colSpan="4" style={{ textAlign: 'center', padding: '12px', color: 'var(--text-muted)' }}>
+                                  Không tìm thấy ô đỗ nào khớp!
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>

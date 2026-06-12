@@ -123,6 +123,58 @@ namespace PBMS.Registry.API.Controllers
             return Ok(new { Message = "Cập nhật trạng thái thành công!", SlotId = slot.Id, Status = slot.Status.ToString() });
         }
 
+        [HttpPost("slots/batch-update-status")]
+        [Authorize(Policy = "StaffOrManager")]
+        public async Task<IActionResult> BatchUpdateSlotStatus([FromBody] BatchUpdateSlotStatusRequest request)
+        {
+            var slots = await _context.ParkingSlots.Where(s => request.SlotIds.Contains(s.Id)).ToListAsync();
+            if (!slots.Any()) return NotFound(new { Message = "Không tìm thấy ô đỗ nào!" });
+
+            try
+            {
+                foreach (var slot in slots)
+                {
+                    var oldStatus = slot.Status;
+                    slot.Status = request.Status;
+                    if (request.Status == SlotStatus.Reserved)
+                    {
+                        slot.ReservationTimestampUtc = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        slot.ReservationTimestampUtc = null;
+                    }
+
+                    if (request.Status != SlotStatus.Available && oldStatus == SlotStatus.Available)
+                    {
+                        var floor = await _context.Floors.FindAsync(slot.FloorId);
+                        int vehicleTypeId = floor?.AllowedVehicleTypeId ?? 1;
+                        await _publishEndpoint.Publish(new SlotDeletedEvent
+                        {
+                            SlotId = slot.Id,
+                            VehicleTypeId = vehicleTypeId
+                        });
+                    }
+                    else if (request.Status == SlotStatus.Available && oldStatus != SlotStatus.Available)
+                    {
+                        await _publishEndpoint.Publish(new SlotReleasedEvent
+                        {
+                            SlotId = slot.Id,
+                            TimestampUtc = DateTime.UtcNow
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Conflict(new { Message = "Xung đột đồng thời khi cập nhật hàng loạt trạng thái ô đỗ!" });
+            }
+
+            return Ok(new { Message = "Cập nhật hàng loạt trạng thái thành công!", Count = slots.Count });
+        }
+
         [HttpPost("setup")]
         [Authorize(Policy = "ManagerOnly")]
         public async Task<IActionResult> SetupRegistryData()
@@ -293,6 +345,7 @@ namespace PBMS.Registry.API.Controllers
     }
 
     public record UpdateSlotStatusRequest(Guid SlotId, SlotStatus Status);
+    public record BatchUpdateSlotStatusRequest(System.Collections.Generic.List<Guid> SlotIds, SlotStatus Status);
     public record CreateFloorRequest(int FloorNumber, int AllowedVehicleTypeId, int TotalSlots);
     public record UpdateFloorRequest(int FloorNumber, int AllowedVehicleTypeId, int TotalSlots);
     public record CreateSlotRequest(Guid FloorId, string SlotNumber, int DistanceMetric);
