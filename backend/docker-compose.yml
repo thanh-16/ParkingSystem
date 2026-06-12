@@ -1,0 +1,194 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pbms-postgres
+    command: postgres -c shared_buffers=256MB -c work_mem=16MB -c effective_cache_size=768MB -c maintenance_work_mem=64MB -c max_connections=200
+    environment:
+      - POSTGRES_DB=pbms_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - pbms-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: pbms-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - pbms-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: pbms-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    networks:
+      - pbms-network
+
+  pbms-identity:
+    image: pbms-identity:latest
+    container_name: pbms-identity
+    build:
+      context: .
+      dockerfile: src/Services/Identity/PBMS.Identity.API/Dockerfile
+    ports:
+      - "5010:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_identity_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - postgres
+    networks:
+      - pbms-network
+
+  pbms-registry:
+    image: pbms-registry:latest
+    container_name: pbms-registry
+    build:
+      context: .
+      dockerfile: src/Services/Registry/PBMS.Registry.API/Dockerfile
+    ports:
+      - "5020:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_registry_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
+      - RabbitMQ__Host=rabbitmq
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - pbms-network
+
+  pbms-transaction:
+    image: pbms-transaction:latest
+    container_name: pbms-transaction
+    build:
+      context: .
+      dockerfile: src/Services/Transaction/PBMS.Transaction.API/Dockerfile
+    ports:
+      - "5030:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_transaction_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
+      - ConnectionStrings__Redis=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - pbms-network
+
+  pbms-payment:
+    image: pbms-payment:latest
+    container_name: pbms-payment
+    build:
+      context: .
+      dockerfile: src/Services/Payment/PBMS.Payment.API/Dockerfile
+    ports:
+      - "5040:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_payment_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
+      - RabbitMQ__Host=rabbitmq
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - pbms-network
+
+  pbms-ai:
+    image: pbms-ai:latest
+    container_name: pbms-ai
+    build:
+      context: .
+      dockerfile: src/Services/AI/PBMS.AI.API/Dockerfile
+    ports:
+      - "5050:80"
+    environment:
+      - ConnectionStrings__Redis=redis:6379
+      - RabbitMQ__Host=rabbitmq
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - Services__IdentityUrl=http://pbms-identity
+      - Services__RegistryUrl=http://pbms-registry
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - redis
+      - rabbitmq
+      - pbms-identity
+      - pbms-registry
+    networks:
+      - pbms-network
+
+  pbms-gateway:
+    image: pbms-gateway:latest
+    container_name: pbms-gateway
+    build:
+      context: .
+      dockerfile: src/PBMS.Gateway/Dockerfile
+    ports:
+      - "5125:80"
+    environment:
+      - JWT_CERT_PATH=/certs/jwt.pfx
+      - ReverseProxy__Clusters__auth-cluster__Destinations__destination1__Address=http://pbms-identity
+      - ReverseProxy__Clusters__registry-cluster__Destinations__destination1__Address=http://pbms-registry
+      - ReverseProxy__Clusters__transaction-cluster__Destinations__destination1__Address=http://pbms-transaction
+      - ReverseProxy__Clusters__payment-cluster__Destinations__destination1__Address=http://pbms-payment
+      - ReverseProxy__Clusters__ai-cluster__Destinations__destination1__Address=http://pbms-ai
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - Seq__ServerUrl=http://seq:5341
+    volumes:
+      - jwt-certs:/certs
+    depends_on:
+      - pbms-identity
+      - pbms-registry
+      - pbms-transaction
+      - pbms-payment
+      - pbms-ai
+    networks:
+      - pbms-network
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitdata:
+  jwt-certs:
+
+networks:
+  pbms-network:
+    driver: bridge

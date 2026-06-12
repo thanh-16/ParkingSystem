@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PBMS.Gateway/PBMS.Gateway.csproj" />
+    <Project Path="src/PBMS.Shared/PBMS.Shared.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/AI/">
+    <Project Path="src/Services/AI/PBMS.AI.API/PBMS.AI.API.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Identity/">
+    <Project Path="src/Services/Identity/PBMS.Identity.API/PBMS.Identity.API.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Payment/">
+    <Project Path="src/Services/Payment/PBMS.Payment.API/PBMS.Payment.API.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Registry/">
+    <Project Path="src/Services/Registry/PBMS.Registry.API/PBMS.Registry.API.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Transaction/">
+    <Project Path="src/Services/Transaction/PBMS.Transaction.API/PBMS.Transaction.API.csproj" />
+  </Folder>
+</Solution>
