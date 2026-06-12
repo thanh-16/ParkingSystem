@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBMS - ANPR Camera Simulator Terminal</title>
+    <!-- Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #ef4444;
+            --primary-glow: rgba(239, 68, 68, 0.3);
+            --bg-dark: #090d16;
+            --card-bg: rgba(30, 41, 59, 0.45);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #22c55e;
+            --success-glow: rgba(34, 197, 94, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: radial-gradient(circle at top, #0f172a, var(--bg-dark));
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background glow */
+        .top-glow {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.08) 0%, rgba(0,0,0,0) 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 520px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 32px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.55);
+            backdrop-filter: blur(16px);
+            z-index: 10;
+            position: relative;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .camera-icon {
+            display: inline-flex;
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--primary);
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            margin-bottom: 16px;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.05);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            position: relative;
+        }
+
+        .camera-icon::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            top: 6px;
+            right: 6px;
+            box-shadow: 0 0 8px var(--success);
+            animation: pulse 1s infinite alternate;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.7; }
+            100% { transform: scale(1.1); opacity: 1; }
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Camera Viewport Simulation */
+        .viewport-box {
+            width: 100%;
+            height: 160px;
+            background: #030712;
+            border: 2px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        .viewport-box::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+            left: 0;
+            top: 0;
+            animation: scan 3s infinite linear;
+            z-index: 2;
+        }
+
+        @keyframes scan {
+            0% { top: 0%; }
+            50% { top: 100%; }
+            100% { top: 0%; }
+        }
+
+        /* Viewport corner markers */
+        .corner {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-color: rgba(255, 255, 255, 0.4);
+            border-style: solid;
+            pointer-events: none;
+        }
+        .tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; }
+        .tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; }
+        .bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; }
+        .br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; }
+
+        .live-plate-display {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 36px;
+            font-weight: bold;
+            color: #ffffff;
+            background: rgba(15, 23, 42, 0.7);
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 24px;
+            letter-spacing: 3px;
+            text-align: center;
+            min-width: 240px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            transition: all 0.2s;
+            text-shadow: 0 0 6px rgba(255,255,255,0.4);
+        }
+
+        .live-plate-display.flash {
+            border-color: var(--success);
+            box-shadow: 0 0 20px var(--success-glow);
+            color: var(--success);
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+            transform: scale(1.05);
+        }
+
+        .rec-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 10px;
+            color: var(--primary);
+            background: rgba(0,0,0,0.6);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .rec-label::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: inline-block;
+            animation: blink 1s infinite alternate;
+        }
+
+        @keyframes blink {
+            0% { opacity: 0.2; }
+            100% { opacity: 1; }
+        }
+
+        /* Form styling */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        input[type="text"]:focus, select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        input[type="text"] {
+            text-align: center;
+            font-size: 18px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 13.5px;
+            user-select: none;
+        }
+
+        .checkbox-container input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        /* Buttons styling */
+        .btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--primary), #b91c1c);
+            border: none;
+            padding: 14px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14.5px;
+            font-weight: 700;
+            color: #ffffff;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 15px var(--primary-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            opacity: 0.95;
+            box-shadow: 0 6px 20px var(--primary-glow);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        /* Preset Plate Buttons */
+        .presets-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin: 20px 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 6px;
+        }
+
+        .presets-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .preset-btn {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            color: var(--text-muted);
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            text-align: left;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .preset-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: var(--text-main);
+        }
+
+        .preset-btn strong {
+            color: #ffffff;
+            font-size: 12.5px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Logs section */
+        .logs-box {
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 16px;
+            margin-top: 16px;
+        }
+
+        .logs-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .logs-list {
+            max-height: 100px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+        }
+
+        .log-item {
+            background: rgba(0,0,0,0.25);
+            border-left: 3px solid var(--primary);
+            padding: 6px 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-item.success {
+            border-left-color: var(--success);
+        }
+
+        .log-item span {
+            color: var(--text-muted);
+        }
+
+        .log-item strong {
+            color: #ffffff;
+        }
+
+        .log-status {
+            color: var(--success);
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        /* Channel Status Indicator */
+        .channel-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--success);
+            margin-top: 16px;
+            font-weight: 600;
+        }
+
+        .channel-status span.dot {
+            width: 6px;
+            height: 6px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--success);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-glow"></div>
+
+    <div class="container">
+        <div class="header">
+            <div class="camera-icon">
+                <i class="fa-solid fa-camera"></i>
+            </div>
+            <h1>ANPR Camera Hardware Simulator</h1>
+            <p class="subtitle">Trang Giả Lập Camera Cổng Vào (Entrance Lane)</p>
+        </div>
+
+        <!-- CAMERA VIEWPORT -->
+        <div class="viewport-box">
+            <div class="rec-label">REC</div>
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div id="livePlate" class="live-plate-display">NO VEHICLE</div>
+        </div>
+
+        <!-- FORM SIMULATOR -->
+        <form id="simulatorForm">
+            <div class="form-group">
+                <label for="plateInput">Biển Số Quét Thấy (Recognized Plate)</label>
+                <input 
+                    type="text" 
+                    id="plateInput" 
+                    placeholder="VD: 30A-99999" 
+                    maxlength="12"
+                    required
+                >
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; margin-bottom: 20px; align-items: center;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="typeSelect">Loại Phương Tiện</label>
+                    <select id="typeSelect">
+                        <option value="1">Xe Máy (Motorbike)</option>
+                        <option value="2" selected>Compact/Sedan</option>
+                        <option value="3">SUV/Crossover</option>
+                        <option value="4">Xe Điện EV</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0; padding-top: 18px;">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="monthlyCheck">
+                        Vé tháng
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" class="btn">
+                <i class="fa-solid fa-bolt"></i> GỬI LÊN HỆ THỐNG KIỂM SOÁT
+            </button>
+        </form>
+
+        <!-- PRESET BUTTONS -->
+        <h3 class="presets-title">Biển Số Mẫu Thử Nghiệm Nhanh</h3>
+        <div class="presets-grid">
+            <button type="button" class="preset-btn" onclick="fillPreset('30A-12345', 2, false)">
+                <strong>30A-12345</strong>
+                <span>Sedan (Vãng lai)</span>
+            </button>
+            <button type="button" class="preset-btn" onclick="fillPreset('29C-56789', 3, false)">
+                <strong>29C-56789</strong>
+                <span>SUV (Vãng lai)</span>
+            </button>
+            <button type="button" class="preset-btn" onclick="fillPreset('29M1-99999', 1, false)">
+                <strong>29M1-99999</strong>
+                <span>Xe Máy (Vãng lai)</span>
+            </button>
+            <button type="button" class="preset-btn" onclick="fillPreset('30E-88888', 4, true)">
+                <strong>30E-88888</strong>
+                <span>Xe Điện (Vé tháng)</span>
+            </button>
+        </div>
+
+        <!-- RECENT TRANSMISSION LOGS -->
+        <div class="logs-box">
+            <h3 class="logs-title">Nhật ký truyền tín hiệu (Local Broadcast Logs)</h3>
+            <div id="logsList" class="logs-list">
+                <div class="log-item" style="border-left-color: #64748b; font-style: italic; font-size: 11px;">
+                    Chờ nhận diện lượt quét xe đầu tiên...
+                </div>
+            </div>
+        </div>
+
+        <!-- CHANNEL STATUS -->
+        <div class="channel-status">
+            <span class="dot"></span>
+            <span>Broadcast Channel: pbms_anpr_channel (Connected)</span>
+        </div>
+    </div>
+
+    <script>
+        const plateInput = document.getElementById('plateInput');
+        const typeSelect = document.getElementById('typeSelect');
+        const monthlyCheck = document.getElementById('monthlyCheck');
+        const simulatorForm = document.getElementById('simulatorForm');
+        const livePlate = document.getElementById('livePlate');
+        const logsList = document.getElementById('logsList');
+
+        // Create BroadcastChannel for cross-tab messaging
+        const channel = new BroadcastChannel('pbms_anpr_channel');
+
+        // Live input typing mirror
+        plateInput.addEventListener('input', (e) => {
+            const val = e.target.value.trim().toUpperCase();
+            e.target.value = val;
+            livePlate.textContent = val || 'NO VEHICLE';
+            livePlate.classList.remove('flash');
+        });
+
+        // Fill quick preset
+        window.fillPreset = function(plate, typeId, isMonthly) {
+            plateInput.value = plate;
+            typeSelect.value = typeId;
+            monthlyCheck.checked = isMonthly;
+            
+            livePlate.textContent = plate;
+            livePlate.classList.add('flash');
+            setTimeout(() => livePlate.classList.remove('flash'), 1000);
+        };
+
+        // Form Submit Handler
+        simulatorForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const plate = plateInput.value.trim().toUpperCase();
+            const typeId = parseInt(typeSelect.value);
+            const isMonthly = monthlyCheck.checked;
+
+            if (!plate) return;
+
+            // Send plate data over Broadcast Channel to the main portal tab
+            channel.postMessage({
+                licensePlate: plate,
+                vehicleTypeId: typeId,
+                isMonthly: isMonthly
+            });
+
+            // Flash viewport display green to simulate success scan
+            livePlate.classList.add('flash');
+            setTimeout(() => livePlate.classList.remove('flash'), 1500);
+
+            // Log entry locally
+            const time = new Date().toLocaleTimeString('vi-VN');
+            const typeNames = {
+                1: 'Xe Máy',
+                2: 'Sedan',
+                3: 'SUV',
+                4: 'Xe Điện EV'
+            };
+            
+            const logItem = document.createElement('div');
+            logItem.className = 'log-item success';
+            logItem.innerHTML = `
+                <div>[${time}] <strong>${plate}</strong> (${typeNames[typeId]}${isMonthly ? ' - Vé tháng' : ''})</div>
+                <div class="log-status">ĐÃ GỬI ✓</div>
+            `;
+
+            // Remove placeholder if present
+            if (logsList.children.length === 1 && logsList.children[0].style.fontStyle === 'italic') {
+                logsList.innerHTML = '';
+            }
+
+            logsList.insertBefore(logItem, logsList.firstChild);
+
+            // Reset input for next car
+            plateInput.value = '';
+            // Don't reset select dropdown to keep testing easy
+        });
+    </script>
+</body>
+</html>

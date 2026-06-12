@@ -1,0 +1,6 @@
+@PBMS.AI.API_HostAddress = http://localhost:5188
+
+GET {{PBMS.AI.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

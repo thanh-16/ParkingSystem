@@ -1,0 +1,6 @@
+@PBMS.Gateway_HostAddress = http://localhost:5125
+
+GET {{PBMS.Gateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
