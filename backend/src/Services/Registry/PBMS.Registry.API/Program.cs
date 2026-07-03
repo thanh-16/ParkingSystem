@@ -65,6 +65,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddEntityFrameworkOutbox<RegistryDbContext>(o =>
     {
+        o.UsePostgres();
         o.UseBusOutbox();
     });
 
@@ -145,7 +146,11 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddHostedService<PBMS.Registry.API.Services.SlotReconciliationService>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -158,6 +163,53 @@ try
     {
         var db = scope.ServiceProvider.GetRequiredService<RegistryDbContext>();
         await db.Database.MigrateAsync();
+
+        if (!await db.ParkingSlots.AnyAsync())
+        {
+            Console.WriteLine("[REGISTRY] ParkingSlots table is empty. Automatically seeding default database...");
+            var floor1 = new PBMS.Registry.API.Models.Floor { FloorNumber = 1, AllowedVehicleTypeId = 2, TotalSlots = 15 };
+            var floor2 = new PBMS.Registry.API.Models.Floor { FloorNumber = 2, AllowedVehicleTypeId = 3, TotalSlots = 10 };
+            var floor3 = new PBMS.Registry.API.Models.Floor { FloorNumber = 3, AllowedVehicleTypeId = 4, TotalSlots = 10 };
+
+            db.Floors.AddRange(floor1, floor2, floor3);
+            await db.SaveChangesAsync();
+
+            for (int i = 1; i <= 15; i++)
+            {
+                db.ParkingSlots.Add(new PBMS.Registry.API.Models.ParkingSlot
+                {
+                    FloorId = floor1.Id,
+                    SlotNumber = $"F1-C{i:00}",
+                    Status = PBMS.Registry.API.Models.SlotStatus.Available,
+                    DistanceMetric = i * 4
+                });
+            }
+
+            for (int i = 1; i <= 10; i++)
+            {
+                db.ParkingSlots.Add(new PBMS.Registry.API.Models.ParkingSlot
+                {
+                    FloorId = floor2.Id,
+                    SlotNumber = $"F2-S{i:00}",
+                    Status = PBMS.Registry.API.Models.SlotStatus.Available,
+                    DistanceMetric = i * 5
+                });
+            }
+
+            for (int i = 1; i <= 10; i++)
+            {
+                db.ParkingSlots.Add(new PBMS.Registry.API.Models.ParkingSlot
+                {
+                    FloorId = floor3.Id,
+                    SlotNumber = $"F3-E{i:00}",
+                    Status = PBMS.Registry.API.Models.SlotStatus.Available,
+                    DistanceMetric = i * 6
+                });
+            }
+
+            await db.SaveChangesAsync();
+            Console.WriteLine("[REGISTRY] Default database seeded successfully with 35 slots.");
+        }
     }
 }
 catch (Exception ex)

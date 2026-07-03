@@ -13,6 +13,7 @@ namespace PBMS.Transaction.API.Persistence
         public DbSet<ParkingSession> ParkingSessions => Set<ParkingSession>();
         public DbSet<PricingRule> PricingRules => Set<PricingRule>();
         public DbSet<Booking> Bookings => Set<Booking>();
+        public DbSet<DriverWallet> DriverWallets => Set<DriverWallet>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -74,6 +75,13 @@ namespace PBMS.Transaction.API.Persistence
                 entity.Property(e => e.SlotNumber).HasMaxLength(20).IsRequired();
                 entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
                 entity.HasIndex(e => new { e.LicensePlate, e.Status });
+            });
+
+            modelBuilder.Entity<DriverWallet>(entity =>
+            {
+                entity.HasKey(e => e.Username);
+                entity.Property(e => e.Username).HasMaxLength(100);
+                entity.Property(e => e.Balance).HasPrecision(18, 2).IsRequired();
             });
         }
     }

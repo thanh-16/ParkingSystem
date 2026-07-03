@@ -61,7 +61,7 @@ namespace PBMS.Registry.API.Persistence
                     .HasForeignKey(e => e.FloorId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.Property(e => e.RowVersion).IsRowVersion();
+                entity.Property(e => e.RowVersion).IsConcurrencyToken();
 
 
                 entity.HasIndex(e => new { e.FloorId, e.Status })

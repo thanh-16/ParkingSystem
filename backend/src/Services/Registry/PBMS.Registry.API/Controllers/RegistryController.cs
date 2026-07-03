@@ -55,9 +55,10 @@ namespace PBMS.Registry.API.Controllers
         }
 
         [HttpGet("slots/available")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAvailableSlots([FromQuery] int vehicleTypeId)
         {
-
+            // 1. Ưu tiên tìm ô đỗ còn trống trên các tầng được thiết kế đúng cho loại xe này
             var allowedFloors = await _context.Floors
                 .Where(f => f.AllowedVehicleTypeId == vehicleTypeId)
                 .Select(f => f.Id)
@@ -68,11 +69,25 @@ namespace PBMS.Registry.API.Controllers
                 .Where(s => allowedFloors.Contains(s.FloorId) && s.Status == SlotStatus.Available)
                 .ToListAsync();
 
+            // 2. Nếu tầng ưu tiên đã đầy và đây là xe ô tô (loại 2 - Sedan, 3 - SUV, 4 - EV), cho phép đỗ ở tầng ô tô khác còn trống
+            if ((slots == null || slots.Count == 0) && (vehicleTypeId == 2 || vehicleTypeId == 3 || vehicleTypeId == 4))
+            {
+                var carFloors = await _context.Floors
+                    .Where(f => f.AllowedVehicleTypeId == 2 || f.AllowedVehicleTypeId == 3 || f.AllowedVehicleTypeId == 4)
+                    .Select(f => f.Id)
+                    .ToListAsync();
+
+                slots = await _context.ParkingSlots
+                    .Include(s => s.Floor)
+                    .Where(s => carFloors.Contains(s.FloorId) && s.Status == SlotStatus.Available)
+                    .ToListAsync();
+            }
+
             return Ok(slots);
         }
 
         [HttpPost("slots/update-status")]
-        [Authorize(Policy = "StaffOrManager")]
+        [Authorize(Roles = "Driver,Staff,Manager")]
         public async Task<IActionResult> UpdateSlotStatus([FromBody] UpdateSlotStatusRequest request)
         {
             var slot = await _context.ParkingSlots.FindAsync(request.SlotId);
@@ -184,25 +199,12 @@ namespace PBMS.Registry.API.Controllers
             await _context.SaveChangesAsync();
 
 
-            var floorB1 = new Floor { FloorNumber = -1, AllowedVehicleTypeId = 1, TotalSlots = 20 };
             var floor1 = new Floor { FloorNumber = 1, AllowedVehicleTypeId = 2, TotalSlots = 15 };
             var floor2 = new Floor { FloorNumber = 2, AllowedVehicleTypeId = 3, TotalSlots = 10 };
             var floor3 = new Floor { FloorNumber = 3, AllowedVehicleTypeId = 4, TotalSlots = 10 };
 
-            _context.Floors.AddRange(floorB1, floor1, floor2, floor3);
+            _context.Floors.AddRange(floor1, floor2, floor3);
             await _context.SaveChangesAsync();
-
-
-            for (int i = 1; i <= 20; i++)
-            {
-                _context.ParkingSlots.Add(new ParkingSlot
-                {
-                    FloorId = floorB1.Id,
-                    SlotNumber = $"B1-M{i:00}",
-                    Status = SlotStatus.Available,
-                    DistanceMetric = i * 3
-                });
-            }
 
 
             for (int i = 1; i <= 15; i++)
@@ -241,7 +243,7 @@ namespace PBMS.Registry.API.Controllers
             }
 
             await _context.SaveChangesAsync();
-            return Ok(new { Message = "Mock Registry data seeded. 4 floors, 55 slots created." });
+            return Ok(new { Message = "Mock Registry data seeded. 3 floors, 35 slots created." });
         }
 
         [HttpPost("floors")]

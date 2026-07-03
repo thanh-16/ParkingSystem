@@ -21,7 +21,7 @@ namespace PBMS.Transaction.API.Controllers
         }
 
         [HttpPost("check-in")]
-        [Authorize(Roles = "Staff,Driver")]
+        [Authorize(Roles = "Manager,Staff,Driver")]
         public async Task<IActionResult> CheckIn([FromBody] CheckInRequest request)
         {
             var command = new CheckInCommand(request.CardNumber, request.LicensePlate, request.VehicleTypeId);
@@ -30,7 +30,7 @@ namespace PBMS.Transaction.API.Controllers
         }
 
         [HttpPost("check-out")]
-        [Authorize(Roles = "Staff,Driver")]
+        [Authorize(Roles = "Manager,Staff,Driver")]
         public async Task<IActionResult> CheckOut([FromBody] CheckOutRequest request)
         {
             if (string.IsNullOrEmpty(request.CardNumber) && string.IsNullOrEmpty(request.LicensePlate))

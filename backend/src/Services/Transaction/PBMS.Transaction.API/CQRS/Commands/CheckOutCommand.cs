@@ -67,9 +67,6 @@ namespace PBMS.Transaction.API.CQRS.Commands
             session.TotalFee = totalFee;
             session.Status = "Completed";
 
-            await _context.SaveChangesAsync(cancellationToken);
-
-
             if (session.AllocatedSlotId.HasValue)
             {
                 await _publishEndpoint.Publish(new SlotReleasedEvent
@@ -78,6 +75,8 @@ namespace PBMS.Transaction.API.CQRS.Commands
                     TimestampUtc = nowUtc
                 }, cancellationToken);
             }
+
+            await _context.SaveChangesAsync(cancellationToken);
 
             return new CheckOutResult(
                 session.CorrelationId,

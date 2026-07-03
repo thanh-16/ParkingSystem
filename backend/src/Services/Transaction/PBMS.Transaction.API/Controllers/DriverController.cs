@@ -60,11 +60,69 @@ namespace PBMS.Transaction.API.Controllers
             });
         }
 
+        [HttpGet("wallet")]
+        public async Task<IActionResult> GetWallet()
+        {
+            var username = User.Identity?.Name ?? "guest";
+            var wallet = await _context.DriverWallets.FirstOrDefaultAsync(w => w.Username == username);
+            if (wallet == null)
+            {
+                wallet = new DriverWallet { Username = username, Balance = 0m };
+                _context.DriverWallets.Add(wallet);
+                await _context.SaveChangesAsync();
+            }
+            return Ok(wallet);
+        }
+
+        [HttpPost("wallet/deposit")]
+        public async Task<IActionResult> Deposit([FromBody] DepositRequest request)
+        {
+            if (request.Amount <= 0)
+            {
+                return BadRequest(new { Message = "Số tiền nạp phải lớn hơn 0!" });
+            }
+
+            var username = User.Identity?.Name ?? "guest";
+            var wallet = await _context.DriverWallets.FirstOrDefaultAsync(w => w.Username == username);
+            if (wallet == null)
+            {
+                wallet = new DriverWallet { Username = username, Balance = 0m };
+                _context.DriverWallets.Add(wallet);
+            }
+
+            wallet.Balance += request.Amount;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = $"Nạp thành công {request.Amount:N0} đ vào ví!", Wallet = wallet });
+        }
+
+        [HttpGet("bookings")]
+        [Authorize(Roles = "Driver,Manager,Staff")]
+        public async Task<IActionResult> GetActiveBookings()
+        {
+            var bookings = await _context.Bookings
+                .Where(b => b.Status == "Confirmed" && b.ExpiryTimeUtc > DateTime.UtcNow)
+                .ToListAsync();
+            return Ok(bookings);
+        }
+
+        [HttpGet("bookings/active-plate/{licensePlate}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetActiveBookingByPlate(string licensePlate)
+        {
+            var booking = await _context.Bookings
+                .FirstOrDefaultAsync(b => b.LicensePlate == licensePlate && b.Status == "Confirmed" && b.ExpiryTimeUtc > DateTime.UtcNow);
+            if (booking == null)
+            {
+                return NotFound(new { Message = "Không tìm thấy đặt chỗ cho biển số này." });
+            }
+            return Ok(booking);
+        }
+
         [HttpPost("bookings")]
         [Authorize(Roles = "Driver,Manager")]
         public async Task<IActionResult> CreateBooking([FromBody] CreateBookingRequest request)
         {
-
             var activeSession = await _context.ParkingSessions
                 .AnyAsync(s => s.LicensePlate == request.LicensePlate && s.Status == "Active");
             if (activeSession)
@@ -72,15 +130,29 @@ namespace PBMS.Transaction.API.Controllers
                 return BadRequest(new { Message = "Xe của bạn hiện đang đỗ trong bãi!" });
             }
 
+            // Chống spam: không cho đặt trùng biển số xe
             var activeBooking = await _context.Bookings
                 .FirstOrDefaultAsync(b => b.LicensePlate == request.LicensePlate && b.Status == "Confirmed" && b.ExpiryTimeUtc > DateTime.UtcNow);
             if (activeBooking != null)
             {
-                return Ok(new { Message = "Bạn đã có một lịch đặt chỗ đang hoạt động!", Booking = activeBooking });
+                return BadRequest(new { Message = "Biển số xe này đã được đặt giữ chỗ trước đó!" });
             }
 
+            // Kiểm tra ví điện tử và số dư tối thiểu (20.000đ)
+            var username = User.Identity?.Name ?? "guest";
+            var wallet = await _context.DriverWallets.FirstOrDefaultAsync(w => w.Username == username);
+            if (wallet == null || wallet.Balance < 20000m)
+            {
+                return BadRequest(new { Message = "Số dư tài khoản không đủ để đặt chỗ! Vui lòng nạp tối thiểu 20.000 đ vào ví." });
+            }
 
             var client = _httpClientFactory.CreateClient();
+            var authHeader = Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                var tokenVal = authHeader.Substring("Bearer ".Length).Trim();
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenVal);
+            }
             List<ParkingSlotDto>? availableSlots = null;
             try
             {
@@ -97,9 +169,7 @@ namespace PBMS.Transaction.API.Controllers
                 return BadRequest(new { Message = "Hệ thống hết vị trí trống cho loại xe này!" });
             }
 
-
             var slot = availableSlots[0];
-
 
             try
             {
@@ -115,6 +185,8 @@ namespace PBMS.Transaction.API.Controllers
                 return StatusCode(500, new { Message = $"Không thể cập nhật trạng thái ô đỗ: {ex.Message}" });
             }
 
+            // Trừ tiền cọc giữ chỗ trong ví của Driver
+            wallet.Balance -= 20000m;
 
             var nowUtc = DateTime.UtcNow;
             var booking = new Booking
@@ -131,11 +203,12 @@ namespace PBMS.Transaction.API.Controllers
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
 
-            return Ok(new { Message = "Đặt chỗ thành công! Ô đỗ được giữ trong 30 phút.", Booking = booking });
+            return Ok(new { Message = "Đặt chỗ thành công! Ô đỗ được giữ trong 30 phút. Đã khấu trừ 20.000đ tiền cọc.", Booking = booking, Balance = wallet.Balance });
         }
     }
 
     public record CreateBookingRequest(string LicensePlate, int VehicleTypeId);
+    public record DepositRequest(decimal Amount);
 
     public class ParkingSlotDto
     {

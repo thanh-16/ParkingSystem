@@ -43,9 +43,6 @@ namespace PBMS.Transaction.API.Controllers
             session.Notes = request.Notes;
             session.TotalFee = request.CustomFee ?? 0m;
 
-            await _context.SaveChangesAsync();
-
-
             if (session.AllocatedSlotId.HasValue)
             {
                 await _publishEndpoint.Publish(new SlotReleasedEvent
@@ -54,6 +51,8 @@ namespace PBMS.Transaction.API.Controllers
                     TimestampUtc = nowUtc
                 });
             }
+
+            await _context.SaveChangesAsync();
 
             return Ok(new { Message = "Xử lý ngoại lệ thành công! Ô đỗ xe đã được giải phóng.", Session = session });
         }

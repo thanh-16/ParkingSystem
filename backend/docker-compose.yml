@@ -50,6 +50,7 @@ services:
     ports:
       - "5010:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_identity_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
       - JWT_CERT_PATH=/certs/jwt.pfx
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -70,6 +71,7 @@ services:
     ports:
       - "5020:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_registry_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
       - RabbitMQ__Host=rabbitmq
       - JWT_CERT_PATH=/certs/jwt.pfx
@@ -92,12 +94,14 @@ services:
     ports:
       - "5030:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_transaction_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
       - ConnectionStrings__Redis=redis:6379
       - RabbitMQ__Host=rabbitmq
       - JWT_CERT_PATH=/certs/jwt.pfx
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - Seq__ServerUrl=http://seq:5341
+      - Services__RegistryUrl=http://pbms-registry
     volumes:
       - jwt-certs:/certs
     depends_on:
@@ -116,6 +120,7 @@ services:
     ports:
       - "5040:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=pbms_payment_db;Username=postgres;Password=postgres;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=120;Connection Lifetime=300;Timeout=15;
       - RabbitMQ__Host=rabbitmq
       - JWT_CERT_PATH=/certs/jwt.pfx
@@ -138,11 +143,13 @@ services:
     ports:
       - "5050:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - ConnectionStrings__Redis=redis:6379
       - RabbitMQ__Host=rabbitmq
       - JWT_CERT_PATH=/certs/jwt.pfx
       - Services__IdentityUrl=http://pbms-identity
       - Services__RegistryUrl=http://pbms-registry
+      - Services__TransactionUrl=http://pbms-transaction
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - Seq__ServerUrl=http://seq:5341
     volumes:
@@ -164,6 +171,7 @@ services:
     ports:
       - "5125:80"
     environment:
+      - ASPNETCORE_HTTP_PORTS=80
       - JWT_CERT_PATH=/certs/jwt.pfx
       - ReverseProxy__Clusters__auth-cluster__Destinations__destination1__Address=http://pbms-identity
       - ReverseProxy__Clusters__registry-cluster__Destinations__destination1__Address=http://pbms-registry

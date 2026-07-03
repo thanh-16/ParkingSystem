@@ -79,28 +79,13 @@ const INITIAL_SESSIONS = [
 
 function App() {
 
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState({ username: 'driver1', fullName: 'Phạm Văn C', role: 'Driver' });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
-  const [mode, setMode] = useState(() => localStorage.getItem('pbms_mode') || 'offline');
+  const [mode, setMode] = useState(() => localStorage.getItem('pbms_mode') || 'live');
   const [apiOnline, setApiOnline] = useState(false);
   const [walletBalance, setWalletBalance] = useState(100000);
-
-  useEffect(() => {
-    const detectBackend = async () => {
-      try {
-        const res = await fetch('http://localhost:5125/health');
-        if (res.ok) {
-          setMode('live');
-          setApiOnline(true);
-        }
-      } catch (e) {
-        // Silent catch
-      }
-    };
-    detectBackend();
-  }, []);
 
 
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -286,18 +271,6 @@ function App() {
   }, [mode, user, token]);
 
   useEffect(() => {
-    if (user) {
-      if (user.role === 'Manager') {
-        setActiveTab('dashboard');
-      } else if (user.role === 'Staff') {
-        setActiveTab('gates');
-      } else if (user.role === 'Driver') {
-        setActiveTab('driver');
-      }
-    }
-  }, [user]);
-
-  useEffect(() => {
     if (mode === 'live' && token) {
       syncLiveConfig();
       const interval = setInterval(() => {
@@ -384,16 +357,6 @@ function App() {
       });
       if (slRes.ok) {
         const liveSlots = await slRes.json();
-
-        // Build a set of slot IDs that have active sessions pointing to them
-        const sessionSlotIds = new Set();
-        activeSessions.forEach((sess) => {
-          const sid = sess.allocatedSlotId || sess.AllocatedSlotId;
-          if (sid && (sess.status === 'Active' || sess.Status === 'Active')) {
-            sessionSlotIds.add(sid);
-          }
-        });
-
         setSlots((prev) =>
           prev.map((s) => {
             const lSlot = liveSlots.find((ls) => ls.slotNumber === s.slotNumber);
@@ -401,15 +364,14 @@ function App() {
               const matchedSession = activeSessions.find(
                 (sess) => (sess.allocatedSlotId || sess.AllocatedSlotId) === lSlot.id && (sess.status === 'Active' || sess.Status === 'Active')
               );
-              
+
               let mappedStatus = 'Available';
               if (lSlot.status === 1 || lSlot.status === 'Occupied') mappedStatus = 'Occupied';
               else if (lSlot.status === 2 || lSlot.status === 'Reserved') mappedStatus = 'Reserved';
               else if (lSlot.status === 3 || lSlot.status === 'Maintenance') mappedStatus = 'Maintenance';
 
               // CRITICAL FIX: If there's an active session pointing to this slot,
-              // force status to Occupied regardless of what Registry DB says.
-              // This handles CQRS async delay where Registry hasn't been updated yet.
+              // force status to Occupied regardless of Registry DB status
               if (matchedSession) {
                 mappedStatus = 'Occupied';
               }
@@ -445,11 +407,9 @@ function App() {
   };
 
 
-  const handleLogin = async (e, customUser = null, customPass = null) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const u = customUser || username;
-    const p = customPass || password;
-    if (!u || !p) {
+    if (!username || !password) {
       addToast('Vui lòng nhập đầy đủ thông tin đăng nhập!', 'error');
       return;
     }
@@ -459,7 +419,7 @@ function App() {
         const res = await fetch('http://localhost:5125/api/v1/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: u, password: p })
+          body: JSON.stringify({ username, password })
         });
         if (res.ok) {
           const data = await res.json();
@@ -486,13 +446,13 @@ function App() {
       }
     } else {
 
-      if (u === 'manager1' && p === 'password') {
+      if (username === 'manager1' && password === 'password') {
         setUser({ username: 'manager1', fullName: 'Nguyễn Văn A', role: 'Manager' });
         addToast('Đăng nhập thành công với vai trò Quản lý! (Offline Simulation)', 'success');
-      } else if (u === 'staff1' && p === 'password') {
+      } else if (username === 'staff1' && password === 'password') {
         setUser({ username: 'staff1', fullName: 'Trần Thị B', role: 'Staff' });
         addToast('Đăng nhập thành công với vai trò Nhân viên! (Offline Simulation)', 'success');
-      } else if (u === 'driver1' && p === 'password') {
+      } else if (username === 'driver1' && password === 'password') {
         setUser({ username: 'driver1', fullName: 'Phạm Văn C', role: 'Driver' });
         addToast('Đăng nhập thành công với vai trò Lái xe! (Offline Simulation)', 'success');
       } else {
@@ -1462,393 +1422,29 @@ function App() {
   return (
     <>
       <div className="top-glow"></div>
-
-      {!user && (
-        <Login
-          mode={mode}
-          setMode={setMode}
-          handleLogin={handleLogin}
+      
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', padding: '40px 20px' }}>
+        <DriverPortal
+          driverActiveTab={driverActiveTab}
+          setDriverActiveTab={setDriverActiveTab}
+          driverPlate={driverPlate}
+          setDriverPlate={setDriverPlate}
+          driverBookingForm={driverBookingForm}
+          setDriverBookingForm={setDriverBookingForm}
+          driverBookingSuccess={driverBookingSuccess}
+          driverActiveSession={driverActiveSession}
+          handleDriverBooking={handleDriverBooking}
+          trackDriverSession={trackDriverSession}
+          user={user}
+          walletBalance={walletBalance}
+          handleDeposit={handleDeposit}
+          token={token}
+          setToken={setToken}
           setUser={setUser}
           addToast={addToast}
-          username={username}
-          setUsername={setUsername}
-          password={password}
-          setPassword={setPassword}
+          mode={mode}
         />
-      )}
-
-      {user && (
-        <div className="app-layout">
-          <aside className="sidebar">
-            <div className="sidebar-logo">
-              <i className="fa-solid fa-square-parking logo-icon"></i>
-              <h3>PBMS PORTAL</h3>
-            </div>
-
-            <div className="user-profile">
-              <div className="avatar">{user.fullName.split(' ').pop().charAt(0)}</div>
-              <div className="info">
-                <span>{user.fullName}</span>
-                <span className="badge">{user.role}</span>
-              </div>
-            </div>
-
-            <nav className="nav-menu">
-              {user.role === 'Manager' && (
-                <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-                  <i className="fa-solid fa-chart-line"></i> Bảng Giám Sát
-                </button>
-              )}
-              {user.role === 'Staff' && (
-                <>
-                  <button className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-                    <i className="fa-solid fa-chart-line"></i> Bảng Giám Sát
-                  </button>
-                  <button className={`nav-item ${activeTab === 'gates' ? 'active' : ''}`} onClick={() => setActiveTab('gates')}>
-                    <i className="fa-solid fa-door-open"></i> Làn Xe & Cổng
-                  </button>
-                </>
-              )}
-              {user.role === 'Driver' && (
-                <button className={`nav-item ${activeTab === 'driver' ? 'active' : ''}`} onClick={() => setActiveTab('driver')}>
-                  <i className="fa-solid fa-mobile-screen-button"></i> Ứng Dụng Lái Xe
-                </button>
-              )}
-            </nav>
-
-            <div className="sidebar-footer">
-              <button className="btn-logout" onClick={handleLogout}>
-                <i className="fa-solid fa-power-off"></i> Đăng xuất
-              </button>
-            </div>
-          </aside>
-
-          <main className="workspace">
-            <div className="workspace-header">
-              <div>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Hệ thống Quản lý Bãi xe Thông minh</span>
-                <h1>
-                  {activeTab === 'dashboard' && (user.role === 'Manager' ? 'Bảng Giám Sát Của Quản Lý (Manager Panel)' : 'Bảng Giám Sát Bãi Xe (Staff Panel)')}
-                  {activeTab === 'gates' && 'Mô Phỏng Cổng Làn Check-In / Check-Out'}
-                  {activeTab === 'driver' && 'Cổng Thông Tin Lái Xe & Đặt Chỗ Trước'}
-                </h1>
-              </div>
-
-              <div className="header-right">
-                <div className="mode-toggle-pill">
-                  <button className={`mode-toggle-btn ${mode === 'offline' ? 'active' : ''}`} onClick={() => setMode('offline')}>
-                    Mô phỏng (Local)
-                  </button>
-                  <button className={`mode-toggle-btn ${mode === 'live' ? 'active' : ''}`} onClick={() => setMode('live')}>
-                    API Gateway (Live)
-                  </button>
-                </div>
-                <div className={`status-indicator ${mode === 'offline' ? 'offline' : ''}`}>
-                  <span className="pulse-dot"></span>
-                  <span>{mode === 'live' ? (apiOnline ? 'Live Gateway Online' : 'Gateway Offline') : 'Mô Phỏng Offline'}</span>
-                </div>
-              </div>
-            </div>
-
-            {mode === 'live' && !apiOnline && (
-              <div className="alert-box error" style={{ padding: '16px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: '24px', color: 'var(--danger)' }}></i>
-                  <div>
-                    <h4 style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#7f1d1d' }}>Kết Nối Live API Gateway Ngoại Tuyến (Offline)</h4>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#991b1b', lineHeight: '1.4' }}>
-                      Cổng API Gateway (<code>http://localhost:5125</code>) ngoại tuyến. Vui lòng kiểm tra kết nối dịch vụ.
-                    </p>
-                  </div>
-                </div>
-                <button onClick={() => setMode('offline')} className="btn" style={{ background: 'var(--danger)', color: '#ffffff', padding: '8px 16px', fontSize: '12px', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
-                  <i className="fa-solid fa-power-off"></i> Mô Phỏng Offline
-                </button>
-              </div>
-            )}
-
-            {activeTab === 'dashboard' && (
-              <Dashboard
-                slots={slots}
-                revenue={revenue}
-                sessions={sessions}
-                selectedFloor={selectedFloor}
-                setSelectedFloor={setSelectedFloor}
-                setSelectedSlotDetails={setSelectedSlotDetails}
-                handleBatchToggleMaintenanceForFloor={handleBatchToggleMaintenanceForFloor}
-                maintenanceSearch={maintenanceSearch}
-                setMaintenanceSearch={setMaintenanceSearch}
-                maintenanceFilter={maintenanceFilter}
-                setMaintenanceFilter={setMaintenanceFilter}
-                aiWeights={aiWeights}
-                handleWeightChange={handleWeightChange}
-                saveAiWeights={saveAiWeights}
-                pricingRules={pricingRules}
-                setPricingRules={setPricingRules}
-                savePricingRule={savePricingRule}
-                mode={mode}
-                runLiveDbSetup={runLiveDbSetup}
-                user={user}
-                handleToggleMaintenance={handleToggleMaintenance}
-              />
-            )}
-
-            {activeTab === 'gates' && (
-              <StaffConsole
-                checkInForm={checkInForm}
-                setCheckInForm={setCheckInForm}
-                gateOpenCheckIn={gateOpenCheckIn}
-                ledScreenData={ledScreenData}
-                autoCheckIn={autoCheckIn}
-                setAutoCheckIn={setAutoCheckIn}
-                triggerAutoCheckIn={triggerAutoCheckIn}
-                runAICheckInAnalysis={runAICheckInAnalysis}
-                confirmCheckIn={confirmCheckIn}
-                simulateIncomingCar={simulateIncomingCar}
-                slots={slots}
-                aiScoringResults={aiScoringResults}
-                selectedWinner={selectedWinner}
-                checkOutPlateOrCard={checkOutPlateOrCard}
-                setCheckOutPlateOrCard={setCheckOutPlateOrCard}
-                searchCheckOutSession={searchCheckOutSession}
-                checkoutInvoice={checkoutInvoice}
-                gateOpenCheckOut={gateOpenCheckOut}
-                confirmCheckOut={confirmCheckOut}
-                sessions={sessions}
-                autofillCheckOut={autofillCheckOut}
-                triggerReportException={triggerReportException}
-                mode={mode}
-                user={user}
-              />
-            )}
-
-            {activeTab === 'driver' && (
-              <DriverPortal
-                driverActiveTab={driverActiveTab}
-                setDriverActiveTab={setDriverActiveTab}
-                driverPlate={driverPlate}
-                setDriverPlate={setDriverPlate}
-                driverBookingForm={driverBookingForm}
-                setDriverBookingForm={setDriverBookingForm}
-                driverBookingSuccess={driverBookingSuccess}
-                driverActiveSession={driverActiveSession}
-                handleDriverBooking={handleDriverBooking}
-                trackDriverSession={trackDriverSession}
-                user={user}
-                walletBalance={walletBalance}
-                handleDeposit={handleDeposit}
-                token={token}
-                setToken={setToken}
-                setUser={setUser}
-                addToast={addToast}
-                mode={mode}
-              />
-            )}
-          </main>
-        </div>
-      )}
-
-      {showExceptionModal && (
-        <div className="overlay-dialog">
-          <div className="dialog-content">
-            <div className="dialog-header">
-              <h3>🚨 Lập Biên Bản Xử Lý Sự Cố Ngoại Lệ</h3>
-              <button className="close-btn" onClick={() => setShowExceptionModal(null)}>
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-            <div className="alert-box error">
-              Biên bản này sẽ giải phóng ô đỗ <strong>{showExceptionModal.slotNumber}</strong> ngay lập tức để bãi xe hoạt động bình thường, và lưu lại ghi chú giải trình của bạn.
-            </div>
-
-            <div className="form-group">
-              <label>Biển số xe gặp sự cố</label>
-              <input type="text" disabled value={showExceptionModal.licensePlate} />
-            </div>
-
-            <div className="form-group">
-              <label>Ghi chú lý do / Biên bản sự cố (Notes)</label>
-              <textarea
-                style={{
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid var(--border-color)',
-                  color: 'white',
-                  borderRadius: '8px',
-                  padding: '10px',
-                  fontSize: '13px',
-                  outline: 'none',
-                  minHeight: '80px',
-                  fontFamily: 'inherit'
-                }}
-                placeholder="Ví dụ: Lái xe làm mất thẻ từ, đã xác minh hình ảnh đối chiếu khớp biển số..."
-                value={exceptionNotes}
-                onChange={(e) => setExceptionNotes(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Thu phí thực tế (nếu có) - VND</label>
-              <input
-                type="number"
-                placeholder="Ví dụ: 50000"
-                value={exceptionFee}
-                onChange={(e) => setExceptionFee(e.target.value)}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <button className="btn btn-secondary" onClick={() => setShowExceptionModal(null)} style={{ flex: 1 }}>
-                Hủy Bỏ
-              </button>
-              <button className="btn btn-danger" onClick={submitException} style={{ flex: 1 }}>
-                Xác Nhận Giải Quyết
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedSlotDetails && (
-        <div className="overlay-dialog">
-          <div className="dialog-content">
-            <div className="dialog-header">
-              <h3><i className="fa-solid fa-circle-info"></i> Chi Tiết Vị Trí Đỗ: {selectedSlotDetails.slotNumber}</h3>
-              <button className="close-btn" onClick={() => setSelectedSlotDetails(null)}>
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label>Tầng</label>
-                  <input type="text" disabled value={selectedSlotDetails.floorNumber === -1 ? 'Tầng B1 (Hầm)' : `Tầng ${selectedSlotDetails.floorNumber}`} />
-                </div>
-                <div className="form-group">
-                  <label>Khoảng cách tới cổng</label>
-                  <input type="text" disabled value={`${selectedSlotDetails.distanceMetric}m`} />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label>Loại xe cho phép</label>
-                  <input type="text" disabled value={(selectedSlotDetails.allowedVehicleTypeId === 1 && 'Xe Máy (Motorbike)') || (selectedSlotDetails.allowedVehicleTypeId === 2 && 'Compact/Sedan') || (selectedSlotDetails.allowedVehicleTypeId === 3 && 'SUV/Crossover') || (selectedSlotDetails.allowedVehicleTypeId === 4 && 'Xe Điện EV') || 'Mọi loại xe'} />
-                </div>
-                <div className="form-group">
-                  <label>Trạng thái hiện tại</label>
-                  <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                    <span className="status-indicator" style={{ border: 'none', padding: '4px 10px', fontSize: '12px', background: selectedSlotDetails.status === 'Available' ? 'rgba(16, 185, 129, 0.08)' : selectedSlotDetails.status === 'Occupied' ? 'rgba(239, 68, 68, 0.08)' : selectedSlotDetails.status === 'Reserved' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(6, 182, 212, 0.08)', color: selectedSlotDetails.status === 'Available' ? 'var(--success)' : selectedSlotDetails.status === 'Occupied' ? 'var(--danger)' : selectedSlotDetails.status === 'Reserved' ? 'var(--warning)' : 'var(--info)' }}>
-                      {selectedSlotDetails.status === 'Available' && '🟢 Trống (Available)'}
-                      {selectedSlotDetails.status === 'Occupied' && '🔴 Đang đỗ (Occupied)'}
-                      {selectedSlotDetails.status === 'Reserved' && '🟡 Đặt trước (Reserved)'}
-                      {selectedSlotDetails.status === 'Maintenance' && '🛠️ Bảo trì (Maintenance)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {selectedSlotDetails.status === 'Occupied' && (() => {
-                const activeSession = sessions.find((s) => s.slotNumber === selectedSlotDetails.slotNumber && s.status === 'Active');
-                if (!activeSession) return <div className="alert-box info">Đang đỗ xe (không tìm thấy phiên gửi chi tiết).</div>;
-                const inTime = new Date(activeSession.checkInTime);
-                const durationMs = new Date() - inTime;
-                const durationMins = Math.round(durationMs / (1000 * 60));
-                return (
-                  <div className="phone-app-card" style={{ background: 'rgba(239, 68, 68, 0.04)', borderColor: 'rgba(239, 68, 68, 0.15)', marginTop: '8px' }}>
-                    <h4 style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '8px' }}><i className="fa-solid fa-car"></i> Thông Tin Phiên Gửi Xe</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Biển số xe:</span>
-                        <strong>{activeSession.licensePlate}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Mã thẻ từ:</span>
-                        <code>{activeSession.cardNumber}</code>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Thời gian vào:</span>
-                        <span>{inTime.toLocaleString('vi-VN')}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Thời lượng đỗ:</span>
-                        <span>{durationMins} phút</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {selectedSlotDetails.status === 'Reserved' && (() => {
-                const activeBooking = bookings.find((b) => b.slotNumber === selectedSlotDetails.slotNumber && b.status === 'Confirmed');
-                if (!activeBooking) return <div className="alert-box info">Vị trí đã được đặt trước bởi lái xe.</div>;
-                return (
-                  <div className="phone-app-card" style={{ background: 'rgba(245, 158, 11, 0.04)', borderColor: 'rgba(245, 158, 11, 0.15)', marginTop: '8px' }}>
-                    <h4 style={{ color: 'var(--warning)', fontSize: '13px', marginBottom: '8px' }}><i className="fa-solid fa-clock"></i> Thông Tin Đặt Chỗ</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Biển số xe:</span>
-                        <strong>{activeBooking.licensePlate}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Giờ đặt chỗ:</span>
-                        <span>{activeBooking.bookingTime}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Trạng thái:</span>
-                        <span style={{ color: 'var(--warning)' }}>Đã Xác Nhận (Confirmed)</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {(user.role === 'Manager' || user.role === 'Staff') && (
-                <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                  {selectedSlotDetails.status === 'Available' && (
-                    <button onClick={() => handleToggleMaintenance(selectedSlotDetails, true)} className="btn btn-secondary" style={{ flex: 1, borderColor: 'var(--info)' }}>
-                      <i className="fa-solid fa-wrench" style={{ color: 'var(--info)' }}></i> Bảo Trì Ô Đỗ
-                    </button>
-                  )}
-                  {selectedSlotDetails.status === 'Maintenance' && (
-                    <button onClick={() => handleToggleMaintenance(selectedSlotDetails, false)} className="btn" style={{ flex: 1, background: 'var(--success)' }}>
-                      <i className="fa-solid fa-circle-check"></i> Khôi Phục Trống (Available)
-                    </button>
-                  )}
-                  {selectedSlotDetails.status === 'Occupied' && (() => {
-                    const activeSession = sessions.find((s) => s.slotNumber === selectedSlotDetails.slotNumber && s.status === 'Active');
-                    if (!activeSession) return null;
-                    return (
-                      <>
-                        <button
-                          onClick={() => {
-                            setSelectedSlotDetails(null);
-                            autofillCheckOut(activeSession);
-                          }}
-                          className="btn"
-                          style={{ flex: 1 }}
-                        >
-                          <i className="fa-solid fa-credit-card"></i> Check-out nhanh
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedSlotDetails(null);
-                            triggerReportException(activeSession);
-                          }}
-                          className="btn btn-danger"
-                          style={{ flex: 1 }}
-                        >
-                          <i className="fa-solid fa-triangle-exclamation"></i> Báo sự cố
-                        </button>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       <div className="toast-box">
         {toasts.map((toast) => (

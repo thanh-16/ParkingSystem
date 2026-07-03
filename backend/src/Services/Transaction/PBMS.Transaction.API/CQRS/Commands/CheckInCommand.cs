@@ -35,12 +35,11 @@ namespace PBMS.Transaction.API.CQRS.Commands
                 LicensePlate = request.LicensePlate,
                 VehicleTypeId = request.VehicleTypeId,
                 CheckInTime = nowUtc,
-                Status = "Pending"
+                Status = "Pending",
+                CurrentState = "Initial"
             };
 
             _context.ParkingSessions.Add(session);
-            await _context.SaveChangesAsync(cancellationToken);
-
 
             await _publishEndpoint.Publish(new CheckInInitiatedEvent
             {
@@ -50,6 +49,8 @@ namespace PBMS.Transaction.API.CQRS.Commands
                 VehicleTypeId = session.VehicleTypeId,
                 TimestampUtc = nowUtc
             }, cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
 
             return new CheckInResult(
                 session.CorrelationId,

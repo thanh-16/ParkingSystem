@@ -100,7 +100,7 @@ builder.Services.AddRateLimiter(options =>
 
         var role = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Anonymous";
 
-        int permitLimit = 5;
+        int permitLimit = 20;
         if (role == "Manager") permitLimit = 100;
         else if (role == "Staff") permitLimit = 50;
         else if (role == "Driver") permitLimit = 20;

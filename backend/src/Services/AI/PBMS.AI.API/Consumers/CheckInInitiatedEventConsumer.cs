@@ -30,7 +30,42 @@ namespace PBMS.AI.API.Consumers
             var @event = context.Message;
             var client = _httpClientFactory.CreateClient("RegistryClient");
             var registryBaseUrl = _configuration["Services:RegistryUrl"] ?? "http://localhost:5020";
+            var transactionBaseUrl = _configuration["Services:TransactionUrl"] ?? "http://pbms-transaction";
 
+            // 1. Kiểm tra xem xe này có đặt giữ chỗ trước không
+            var bookingUrl = $"{transactionBaseUrl.TrimEnd('/')}/api/v1/driver/bookings/active-plate/{@event.LicensePlate}";
+            try
+            {
+                var bookingRes = await client.GetAsync(bookingUrl);
+                if (bookingRes.IsSuccessStatusCode)
+                {
+                    var booking = await bookingRes.Content.ReadFromJsonAsync<BookingDto>();
+                    if (booking != null)
+                    {
+                        Console.WriteLine($"Found active booking for plate {@event.LicensePlate} (Slot: {booking.SlotNumber}). Bypassing AI slot allocation.");
+
+                        var updateUrl = $"{registryBaseUrl.TrimEnd('/')}/api/v1/registry/slots/update-status";
+                        var updateRes = await client.PostAsJsonAsync(updateUrl, new { SlotId = booking.SlotId, Status = 1 }); // Status 1 is Occupied
+                        if (!updateRes.IsSuccessStatusCode)
+                        {
+                            Console.WriteLine("Failed to update slot status in Registry DB for booked slot.");
+                        }
+
+                        await _publishEndpoint.Publish(new SlotAllocatedEvent
+                        {
+                            SessionId = @event.SessionId,
+                            SlotId = booking.SlotId,
+                            SlotNumber = booking.SlotNumber,
+                            TimestampUtc = DateTime.UtcNow
+                        });
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error checking booking from Transaction service: {ex.Message}");
+            }
 
             var optimalSlotId = await _cache.PopOptimalSlotAsync(@event.VehicleTypeId);
 
@@ -43,13 +78,23 @@ namespace PBMS.AI.API.Consumers
                 await _cache.ReserveSlotAsync(optimalSlotId.Value, TimeSpan.FromMinutes(5));
 
 
+                bool updateSucceeded = false;
                 try
                 {
                     var updateUrl = $"{registryBaseUrl.TrimEnd('/')}/api/v1/registry/slots/update-status";
-                    var response = await client.PostAsJsonAsync(updateUrl, new { SlotId = optimalSlotId.Value, Status = 2 });
-                    if (!response.IsSuccessStatusCode)
+                    var response = await client.PostAsJsonAsync(updateUrl, new { SlotId = optimalSlotId.Value, Status = 1 });
+                    if (response.IsSuccessStatusCode)
                     {
-                        Console.WriteLine("Failed to update slot status in Registry DB.");
+                        updateSucceeded = true;
+                    }
+                    else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        Console.WriteLine($"Cache slot {optimalSlotId.Value} returned 404. Cache is stale. Clearing cache and rebuilding...");
+                        await _cache.ClearAvailableSlotsAsync();
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Failed to update slot status in Registry DB. Status code: {response.StatusCode}");
                     }
                 }
                 catch (Exception ex)
@@ -57,16 +102,17 @@ namespace PBMS.AI.API.Consumers
                     Console.WriteLine($"Error calling Registry status update: {ex.Message}");
                 }
 
-
-                await _publishEndpoint.Publish(new SlotAllocatedEvent
+                if (updateSucceeded)
                 {
-                    SessionId = @event.SessionId,
-                    SlotId = optimalSlotId.Value,
-                    SlotNumber = slotNumber,
-                    TimestampUtc = DateTime.UtcNow
-                });
-
-                return;
+                    await _publishEndpoint.Publish(new SlotAllocatedEvent
+                    {
+                        SessionId = @event.SessionId,
+                        SlotId = optimalSlotId.Value,
+                        SlotNumber = slotNumber,
+                        TimestampUtc = DateTime.UtcNow
+                    });
+                    return;
+                }
             }
 
             Console.WriteLine($"Cache Miss/Empty: Fetching available slots from Registry Service for vehicle type {@event.VehicleTypeId}");
@@ -153,7 +199,7 @@ namespace PBMS.AI.API.Consumers
                 {
                     var updateUrl = $"{registryBaseUrl.TrimEnd('/')}/api/v1/registry/slots/update-status";
 
-                    var response = await client.PostAsJsonAsync(updateUrl, new { SlotId = optimalSlotId.Value, Status = 2 });
+                    var response = await client.PostAsJsonAsync(updateUrl, new { SlotId = optimalSlotId.Value, Status = 1 });
                     if (!response.IsSuccessStatusCode)
                     {
                         Console.WriteLine("Failed to update slot status in Registry DB.");
@@ -210,5 +256,13 @@ namespace PBMS.AI.API.Consumers
         public int FloorNumber { get; set; }
         public int OccupiedSlots { get; set; }
         public int TotalSlots { get; set; }
+    }
+
+    public class BookingDto
+    {
+        public Guid Id { get; set; }
+        public Guid SlotId { get; set; }
+        public string SlotNumber { get; set; } = string.Empty;
+        public string LicensePlate { get; set; } = string.Empty;
     }
 }
